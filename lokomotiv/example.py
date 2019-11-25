@@ -1,22 +1,23 @@
 import asyncio
+import itertools
 from typing import Iterable, AsyncIterable, TypeVar, Callable, Awaitable
+
 
 async def input_loop_async() -> AsyncIterable[str]:
     while True:
         yield input()
 
-async def generate_loop_async() -> AsyncIterable[str]:
+async def generate_loop_async(prefix: str) -> AsyncIterable[str]:
     i = 0
     while True:
         await asyncio.sleep(1)
-        yield f'{i}'
+        yield f'{prefix}_{i}'
         i = i + 1
 
 async def process(message: str) -> str:
-    await asyncio.sleep(1)
     return message.upper()
 
-async def display(messages: AsyncIterable[str]):
+async def display(messages: AsyncIterable[str]) -> None:
     async for message in messages:
         print(message)
 
@@ -27,24 +28,22 @@ async def middleware(loop: AsyncIterable[T], fn: Callable[[T], Awaitable[R]]) ->
     async for item in loop:
         yield await fn(item)
 
-def main():
-    event_loop = asyncio.get_event_loop()
+async def main():
     try:
-        async def prepend(msgs : Iterable[str], amsgs : AsyncIterable[str]):
-            for msg in msgs:
-                yield msg
-            async for amsg in amsgs:
-                yield amsg
+        
+        first_messages = generate_loop_async('first')
+        second_messages = generate_loop_async('second')
 
-        messages = generate_loop_async()
-        messages = prepend(['hi', 'there'], messages)
 
-        messages = middleware(messages, process)
+        while True:
+            n = await first_messages.__anext__()
+            print(n)
 
-        event_loop.run_until_complete(display(messages))
-    finally:
-        event_loop.close()
+    except Exception as ex:
+        print(ex)
+        pass
 
 
 if __name__ == '__main__':
-    main()
+    event_loop = asyncio.get_event_loop()
+    event_loop.run_until_complete(main())

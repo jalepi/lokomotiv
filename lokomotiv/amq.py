@@ -32,3 +32,57 @@ R = TypeVar('R')
 async def middleware(loop: AsyncIterable[T], fn: Callable[[T], Awaitable[R]]) -> AsyncIterable[R]:
     async for elem in loop:
         yield await fn(elem)
+
+
+import pickle
+import importlib
+
+
+async def add_topic(messages: AsyncIterable[List[bytes]], topic: bytes) -> AsyncIterable[List[bytes]]:
+    async for message in messages:
+        yield [topic, *message]
+
+async def remove_topic(messages: AsyncIterable[List[bytes]]) -> AsyncIterable[List[bytes]]:
+    async for message in messages:
+        yield message[1:]
+
+async def work(messages: AsyncIterable[List[bytes]]) -> AsyncIterable[List[bytes]]:
+    async for message in messages:
+        [topic, id, *message] = message
+
+        if topic == b'run':
+            try:
+                result = worker_run(message)
+                yield [b'result', id, result]
+
+            except Exception as ex:
+                print(ex)
+                yield [b'exception', id, pickle.dumps(ex)]
+
+def worker_run(message: List[bytes]) -> bytes:
+    print('message')
+    print(message)
+
+    [module_bytes, function_bytes, *params_bytes] = message
+    
+    print('params')
+    print(params_bytes)
+
+    module_name = module_bytes.decode('utf8')
+    function_name = function_bytes.decode('utf8')
+
+    print(f'{module_name}.{function_name}')
+
+    module = importlib.import_module(module_name)
+    function = module.__dict__[function_name]
+
+    print(module)
+    print(function)
+
+    params = [pickle.loads(param_bytes) for param_bytes in params_bytes]
+    print(params)
+
+    result = function(*params)
+    return pickle.dumps(result)
+
+
