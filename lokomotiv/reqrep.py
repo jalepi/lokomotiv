@@ -1,42 +1,45 @@
+from typing import Callable, List, Iterable
 import zmq
 import multiprocessing
-import threading
-import time
+import contextlib
 
-def request(bind_to):
+def recvsend(connect: str, message_handler: Callable[[List[bytes]], List[bytes]]) -> None:
     with zmq.Context() as context:
-        with context.socket(zmq.REQ) as socket:
-            socket.bind(bind_to)
+        with context.socket(zmq.REP) as rep:
+            rep.connect(connect)
             while True:
-                print(socket)
-                socket.send_multipart([b'hello', b'world'])
-                msg = socket.recv_multipart()
-                print(f'REQ {msg}')
-                time.sleep(1)
+                #print('recvsend.receiving')
+                msg = rep.recv_multipart()
+                #print('recvsend.received')
 
-def reply(connect_to):
+                #print('recvsend.handling')
+                msg = message_handler(msg)
+                #print('recvsend.handled')
+
+                #print('recvsend.sending')
+                rep.send_multipart(msg)
+                #print('recvsend.sent')
+
+def run_broker(frontend: str, backend: str) -> None:
     with zmq.Context() as context:
-        with context.socket(zmq.REP) as socket:
-            socket.connect(connect_to)
-            while True:
-                msg = socket.recv_multipart()
-                print(f'REP {msg}')
-                socket.send_multipart(msg)
+        with context.socket(zmq.ROUTER) as router:
+            router.bind("tcp://*:5559")
+            with context.socket(zmq.DEALER) as dealer:
+                dealer.bind("tcp://*:5560")
+                zmq.proxy(router, dealer)
+
+def send(connect: str, message_list: Iterable[List[bytes]]) -> Iterable[List[bytes]]:
+    with zmq.Context() as context:
+        with context.socket(zmq.REQ) as req:
+            req.connect(connect)
+            for message in message_list:
+                #print('send.sending')
+                req.send_multipart(message)
+                #print('send.sent')
+
+                #print('send.receiving')
+                res = req.recv_multipart()
+                #print('send.received')
+                yield res
 
 
-if __name__ == '__main__':
-    print(__name__)
-    # request_process = multiprocessing.Process(target=request, kwargs={'bind_to': 'tcp://*:9999'})
-    # reply_process = multiprocessing.Process(target=reply, kwargs={'connect_to': 'tcp://localhost:9999'})
-
-    # request_process.start()
-    # reply_process.start()
-
-    request_thread = threading.Thread(target=request, args=['tcp://*:9999'])
-    reply_thread = threading.Thread(target=reply, args=['tcp://localhost:9999'])
-
-    request_thread.start()
-    reply_thread.start()
-
-    request_thread.join()
-    reply_thread.join()
